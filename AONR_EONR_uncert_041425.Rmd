@@ -1,0 +1,153 @@
+---
+title: "Uncertainty Estimation in the AONR and EONR implementing a quadratic plateau Bayesian model"
+author: Francisco Palmero
+output:
+  html_document:
+    df_print: paged
+---
+
+Bayesian inference is implemented to estimate the uncertainty on the "optimal" N rates (AONR, EONR). 
+
+The fitted model for maize grain yield as a response of N rates was a quadratic-plateau with block random effect in the intercept:
+
+Likelihood
+$$y_{ij} \sim normal(\mu_{ij}, \sigma_\epsilon),$$ where
+
+
+\[
+\mu_{ij}=
+\begin{cases}
+\beta_0 + \tau_j + \beta_1x_i - \beta_2x_i^2, &\text{if } x_i\leq AONR\\
+\beta_0 + \tau_j + \beta_1(AONR) - \beta_2(AONR)^2, &\text{o.w.}
+\end{cases}
+\],
+
+where $$AONR = \frac{\beta_1}{2\beta_2}$$
+
+
+The parameter models:
+$$\beta_0 \sim gamma(\alpha_{\beta_{0_k}}, \beta_{\beta_{0_k}}),$$
+$$\beta_1 \sim gamma(\alpha_{\beta_{1_k}}, \beta_{\beta_{1_k}}),$$
+$$\beta_2 \sim gamma(\alpha_{\beta_{2_k}}, \beta_{\beta_{2_k}}),$$
+$$\tau_j \sim normal(0,\sigma_b)$$
+$$\sigma_b \sim uniform(0,1000)$$
+$$\sigma_\epsilon \sim gamma(\alpha_{\sigma_{\epsilon_k}}, \beta_{\sigma_{\epsilon_k}})$$
+
+
+By fitting this model the data, we can obtain the agronomic and the economic optimum N rates, AONR and EONR, respectively.
+$$AONR = \frac{\beta_1}{2\beta_2},$$ and
+
+$$EONR = \frac{\beta_1-PR}{2\beta_2}$$.
+
+To include the variability in maize and N fertilizer prices:
+-> For fertilizers, we retrieved the average price of anhydrous ammonia (82-0-0) and urea (46-0-0) at each April or March.
+-> For maize, we considered the future price at each April. 
+-> These data were retrieved from USDA-ERS and USDA-NASS for the period 2000 - 2021.  
+-> For each iteration of the MCMC, the PR was sampled from $PR \sim gamma(15.2, 2.85)$ and included in the calculus of the EONR. 
+
+
+
+# Calling the requiered packages
+```{r libraries, warning=FALSE, message=FALSE}
+library("rjags")
+```
+
+
+The example you will see below contains the hyperparameters for the models fitted for the sites inside the state of Iowa
+
+# 1) Specify the model
+Blocks Random Effects on Intercept
+```{r}
+model_b0r <- "model{
+
+# Loop through the 4 blocks (K) to create a vector of random deviations.
+for (k in 1:K){ # product expression over k
+  b0_b[k] ~ dnorm(0, 1/sigma_block^2)
+} # end of k product
+
+for (i in 1:N) { # product expression over i
+  
+  # In b0_b[block[i]], 'block' should be passed as data. 
+  # So, in b0_b[block[i]], block[i]: Retrieves the block indicator for the current observation i
+  # and b0_b[block[i]]: Uses the block indicator to access the corresponding random effect intercept from the vector b0_b
+  
+  # Deterministic model
+  mu[i] <- ifelse(x[i] <= (b1/(2*b2)), 
+  b0 + b0_b[block[i]] + b1*x[i] - b2*(x[i]^2),
+  b0 + b0_b[block[i]] + b1*(b1/(2*b2)) - b2*((b1/(2*b2))^2))
+  
+  # Likelihood
+  y[i] ~ dnorm(mu[i], 1/sigma^2)
+
+} # end of i product
+
+# Priors
+b0 ~ dgamma(10.89,0.00155)
+b1 ~ dgamma(3.26,0.0467)
+b2 ~ dgamma(1.5,10.00)
+
+# Priors on variances
+sigma_block ~ dunif(0,5000)
+sigma ~ dgamma(3.75,0.0025)
+
+# Uncertainty around price ratio
+PR ~ dgamma(15.2, 2.85)
+# Obtain the AONR
+AONR <- b1/(2*b2)
+# Obtain the EONR while accounting for the uncertainity in the price ratio
+EONR <- (b1-PR)/(2*b2)
+
+}"
+
+```
+
+
+# 2) Create a function to fit the model
+```{r}
+bayes_model <- function(x,y,block,
+                        parameters = c("b0","b1","b2",
+                                       "b0_b","sigma_block","sigma", 
+                                       "AONR", "EONR"),
+                        n.chains = 4, 
+                        n.iter = 60000, 
+                        n.adapt = 30000,
+                        thin = 10,
+                        seed = 5897
+                        ){
+  
+  data <- list(y = y,
+               x = x,
+               N = length(y),
+               block = block,
+               K = length(unique(block)))
+  
+  set.seed(seed)
+  jags_model <- jags.model(textConnection(model_b0r), 
+                           data = data,
+                           n.adapt = n.adapt,
+                           n.chains = n.chains)
+  
+  post_samples <- coda.samples(jags_model, 
+                               variable.names = parameters, 
+                               n.iter = n.iter,
+                               thin = thin)
+  
+  return(post_samples)
+  
+}
+
+```
+
+
+# 3) Fit the model to the data
+```{r}
+model_saved <- bayes_model(x=df$N_rate, 
+            y=df$Yield,
+            block=df$Block)
+```
+
+
+
+
+
+
