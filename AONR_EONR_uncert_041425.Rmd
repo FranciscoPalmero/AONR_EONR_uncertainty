@@ -30,7 +30,7 @@ $$\beta_0 \sim gamma(\alpha_{\beta_{0_k}}, \beta_{\beta_{0_k}}),$$
 $$\beta_1 \sim gamma(\alpha_{\beta_{1_k}}, \beta_{\beta_{1_k}}),$$
 $$\beta_2 \sim gamma(\alpha_{\beta_{2_k}}, \beta_{\beta_{2_k}}),$$
 $$\tau_j \sim normal(0,\sigma_b)$$
-$$\sigma_b \sim uniform(0,1000)$$
+$$\sigma_b \sim uniform(0,5000)$$
 $$\sigma_\epsilon \sim gamma(\alpha_{\sigma_{\epsilon_k}}, \beta_{\sigma_{\epsilon_k}})$$
 
 
