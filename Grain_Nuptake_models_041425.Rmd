@@ -1,0 +1,249 @@
+---
+title: "Uncertainty Estimation in the AONR and EONR implementing a quadratic plateau Bayesian model"
+author: Francisco Palmero
+output:
+  html_document:
+    df_print: paged
+---
+
+
+Bayesian inference is implemented to predict nitrogen uptake in grain at the nitrogen rates correspinding to the agronomic and economic optimal N rates (AONR and EONR, respectively). 
+
+# Calling the requiered packages
+```{r libraries, warning=FALSE, message=FALSE}
+library("rjags")
+```
+
+
+# 1) Quadratic plateau model
+
+The fitted model for maize grain N uptake as a response of N rates was a quadratic-plateau with block random effect in the intercept:
+
+Likelihood
+$$y_{ij} \sim normal(\mu_{ij}, \sigma_\epsilon),$$ where
+
+
+\[
+\mu_{ij}=
+\begin{cases}
+\beta_0 + \tau_j + \beta_1x_i - \beta_2x_i^2, &\text{if } x_i\leq \left(\frac{\beta_1}{2\beta_2} \right)\\
+\beta_0 + \tau_j + \beta_1 \left(\frac{\beta_1}{2\beta_2} \right) - \beta_2\left(\frac{\beta_1}{2\beta_2} \right)^2, &\text{o.w.}
+\end{cases}
+\],
+
+where $\left(\frac{\beta_1}{2\beta_2} \right)$ is the break point.
+
+
+The parameter models:
+$$\beta_0 \sim uniform(0, 300),$$
+$$\beta_1 \sim uniform(0, 5),$$
+$$\beta_2 \sim uniform(0, 2),$$
+$$\tau_j \sim normal(0,\sigma_b)$$
+$$\sigma_b \sim uniform(0,1000)$$
+$$\sigma_\epsilon \sim uniform(0, 1000)$$
+
+
+
+## 1.1) Specify the model
+Blocks Random Effects on Intercept
+```{r}
+model_b0r_QP <- "model{
+
+# Loop through the 4 blocks (K) to create a vector of random deviations.
+for (k in 1:K){
+  b0_b[k] ~ dnorm(0, 1/sigma_block^2)
+}
+
+# Define the likelihood
+for (i in 1:N) {
+  # Deterministic model
+  
+  # In b0_b[block[i]], 'block' should be passed as data. 
+  # So, in b0_b[block[i]], block[i]: Retrieves the block indicator for the current observation i
+  # and b0_b[block[i]]: Uses the block indicator to access the corresponding random effect intercept from the vector b0_b
+  mu[i] <- ifelse(x[i] <= (b1/(2*b2)), 
+  b0 + b0_b[block[i]] + b1*x[i] - b2*(x[i]^2),
+  b0 + b0_b[block[i]] + b1*(b1/(2*b2)) - b2*((b1/(2*b2))^2))
+  
+  # Likelihood
+  y[i] ~ dnorm(mu[i], 1/sigma^2)
+
+}
+
+# Priors
+b0 ~ dunif(0,300)
+b1 ~ dunif(0,5)
+b2 ~ dunif(0,2)
+
+# Priors on variances
+sigma_block ~ dunif(0,1000)
+sigma ~ dunif(0,1000)
+
+# Plateau
+brpoint <- b1/(2*b2)
+
+}"
+```
+
+
+## 1.2) Create a function to fit the model
+```{r}
+bayes_model_QP <- function(x,y,block,
+                        parameters = c("b0","b1","b2",
+                                       "b0_b","sigma_block","sigma", 
+                                       "brpoint"),
+                        n.chains = 4, 
+                        n.iter = 60000, 
+                        n.adapt = 30000,
+                        thin = 10,
+                        seed = 5897
+                        ){
+  
+  data <- list(y = y,
+               x = x,
+               N = length(y),
+               block = block,
+               K = length(unique(block)))
+  
+  set.seed(seed)
+  jags_model <- jags.model(textConnection(model_b0r_QP), 
+                           data = data,
+                           n.adapt = n.adapt,
+                           n.chains = n.chains)
+  
+  post_samples <- coda.samples(jags_model, 
+                               variable.names = parameters, 
+                               n.iter = n.iter,
+                               thin = thin)
+  
+  return(post_samples)
+  
+}
+
+```
+
+
+## 1.3) Fit the model to the data
+```{r}
+model_saved <- bayes_model_QP(x=df$N_rate, 
+            y=df$Grain_N,
+            block=df$Block)
+```
+
+
+
+
+# 2) Quadratic model
+
+The fitted model for maize grain N uptake as a response of N rates was a quadratic with block random effect in the intercept:
+
+Likelihood
+$$y_{ij} \sim normal(\mu_{ij}, \sigma_\epsilon),$$ where
+
+
+$$\mu_{ij}= \beta_0 + \tau_j + \beta_1x_i - \beta_2x_i^2,$$
+
+
+The parameter models:
+$$\beta_0 \sim uniform(0, 300),$$
+$$\beta_1 \sim uniform(0, 5),$$
+$$\beta_2 \sim uniform(0, 2),$$
+$$\tau_j \sim normal(0,\sigma_b)$$
+$$\sigma_b \sim uniform(0,1000)$$
+$$\sigma_\epsilon \sim uniform(0, 1000)$$
+
+
+## 2.1) Specify the model
+Blocks Random Effects on Intercept
+```{r}
+model_b0r_QD <- "model{
+
+# Loop through the 4 blocks (K) to create a vector of random deviations.
+for (k in 1:K){
+  b0_b[k] ~ dnorm(0, 1/sigma_block^2)
+}
+
+# Define the likelihood
+for (i in 1:N) {
+  # Deterministic model
+  
+  # In b0_b[block[i]], 'block' should be passed as data. 
+  # So, in b0_b[block[i]], block[i]: Retrieves the block indicator for the current observation i
+  # and b0_b[block[i]]: Uses the block indicator to access the corresponding random effect intercept from the vector b0_b
+  mu[i] <- b0 + b0_b[block[i]] + b1*x[i] - b2*(x[i]^2)
+  
+  # Likelihood
+  y[i] ~ dnorm(mu[i], 1/sigma^2)
+
+}
+
+# Priors
+b0 ~ dunif(0,300)
+b1 ~ dunif(0,5)
+b2 ~ dunif(0,2)
+
+# Priors on variances
+sigma_block ~ dunif(0,1000)
+sigma ~ dunif(0,1000)
+
+}"
+```
+
+
+
+## 2.2) Create a function to fit the model
+```{r}
+bayes_model_QD <- function(x,y,block,
+                        parameters = c("b0","b1","b2",
+                                       "b0_b","sigma_block","sigma"),
+                        n.chains = 4, 
+                        n.iter = 60000, 
+                        n.adapt = 30000,
+                        thin = 10,
+                        seed = 5897
+                        ){
+  
+  data <- list(y = y,
+               x = x,
+               N = length(y),
+               block = block,
+               K = length(unique(block)))
+  
+  set.seed(seed)
+  jags_model <- jags.model(textConnection(model_b0r_QD), 
+                           data = data,
+                           n.adapt = n.adapt,
+                           n.chains = n.chains)
+  
+  post_samples <- coda.samples(jags_model, 
+                               variable.names = parameters, 
+                               n.iter = n.iter,
+                               thin = thin)
+  
+  return(post_samples)
+  
+}
+
+```
+
+
+## 2.3) Fit the model to the data
+```{r}
+model_saved <- bayes_model_QD(x=df$N_rate, 
+            y=df$Grain_N,
+            block=df$Block)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
