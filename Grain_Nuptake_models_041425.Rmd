@@ -110,7 +110,9 @@ bayes_model_QP <- function(x,y,block,
                            data = data,
                            n.adapt = n.adapt,
                            n.chains = n.chains)
-  
+
+  update(jags_model,30000)
+
   post_samples <- coda.samples(jags_model, 
                                variable.names = parameters, 
                                n.iter = n.iter,
@@ -214,7 +216,9 @@ bayes_model_QD <- function(x,y,block,
                            data = data,
                            n.adapt = n.adapt,
                            n.chains = n.chains)
-  
+
+  update(jags_model,30000)
+
   post_samples <- coda.samples(jags_model, 
                                variable.names = parameters, 
                                n.iter = n.iter,
@@ -233,6 +237,7 @@ model_saved <- bayes_model_QD(x=df$N_rate,
             y=df$Grain_N,
             block=df$Block)
 ```
+
 
 
 
